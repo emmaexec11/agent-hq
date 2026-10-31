@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://ntfy.sh; media-src blob:; img-src data:">
+<meta name="theme-color" content="#111"><title>Voice → Emma</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:#111;color:#f2f2f2;font-family:-apple-system,system-ui,Segoe UI,Roboto,sans-serif}
+main{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:24px;text-align:center}
+#btn{width:min(70vw,300px);height:min(70vw,300px);border-radius:50%;border:0;font-size:26px;font-weight:700;color:#fff;background:#2b7a3d;cursor:pointer;box-shadow:0 0 0 0 rgba(229,57,53,.6);-webkit-tap-highlight-color:transparent}
+#btn.rec{background:#e53935;animation:pulse 1.4s infinite}
+#btn.busy{background:#555}
+#btn.done{background:#2b7a3d}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(229,57,53,.6)}70%{box-shadow:0 0 0 28px rgba(229,57,53,0)}100%{box-shadow:0 0 0 0 rgba(229,57,53,0)}}
+#time{font-size:44px;font-variant-numeric:tabular-nums;font-weight:300}
+#status{font-size:18px;min-height:1.4em;color:#ccc}
+#status.ok{color:#5fd27a;font-size:24px;font-weight:700}#status.err{color:#ff8a80}
+#after{display:none;width:min(92vw,420px);gap:10px;flex-direction:column}
+.chips{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.chip{padding:14px;border-radius:12px;border:2px solid #444;background:#1c1c1c;color:#eee;font-size:17px}
+.chip.sel{border-color:#5fd27a;background:#1f3324}
+textarea{width:100%;min-height:70px;border-radius:12px;border:2px solid #444;background:#1c1c1c;color:#eee;font-size:16px;padding:10px}
+.row{display:flex;gap:10px}.row button{flex:1;padding:14px;border-radius:12px;border:0;font-size:17px;font-weight:600}
+#save{background:#2b7a3d;color:#fff}#again{background:#333;color:#eee}
+small{color:#888}
+</style></head><body><main>
+<div id="time">0:00</div>
+<button id="btn">Starting…</button>
+<div id="status">Getting the mic ready…</div>
+<div id="after">
+  <div><small>Optional — who's it for? (or just tell Emma in chat)</small></div>
+  <div class="chips">
+    <button class="chip" data-r="mom">Mom</button><button class="chip" data-r="dad">Dad</button>
+    <button class="chip" data-r="general">General</button><button class="chip" data-r="emma">Just Emma</button>
+  </div>
+  <textarea id="note" placeholder="Optional note for Emma"></textarea>
+  <div class="row"><button id="save">Save details</button><button id="again">Record another</button></div>
+  <small>Nothing is posted anywhere until you Approve in chat.</small>
+</div>
+</main>
+<script>
+(function(){
+const btn=document.getElementById('btn'),st=document.getElementById('status'),tm=document.getElementById('time'),after=document.getElementById('after');
+const H=new URLSearchParams(location.hash.slice(1));const TOPIC=H.get('k')||'';const AUTOSTOP=+H.get('autostop')||0;const NTFY='https://ntfy.sh/';
+let startAt=0,rec=null,stream=null,chunks=[],t0=0,timer=null,state='idle',lastId=null,lastBlob=null,lastMime='',lastDur=0,recip=null;
+function say(t,c){st.textContent=t;st.className=c||''}
+function fmt(s){s=Math.floor(s);return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')}
+function pickMime(){const c=['audio/webm;codecs=opus','audio/webm','audio/mp4;codecs=mp4a.40.2','audio/mp4','audio/aac','audio/ogg;codecs=opus'];
+  if(!window.MediaRecorder)return null;for(const m of c){try{if(MediaRecorder.isTypeSupported(m))return m}catch(e){}}return ''}
+function newId(){const d=new Date(),p=n=>String(n).padStart(2,'0');const r=Math.random().toString(36).slice(2,8).padEnd(6,'0');
+  return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'-'+p(d.getHours())+p(d.getMinutes())+p(d.getSeconds())+'-'+r}
+function idle(msg){state='idle';btn.className='';btn.textContent='Tap to record';if(msg)say(msg)}
+async function start(){
+  if(state==='rec'||(state==='starting'&&Date.now()-startAt<2500))return;state='starting';startAt=Date.now();btn.className='busy';btn.textContent='Starting…';after.style.display='none';
+  try{
+    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw new Error('This browser has no mic access here');
+    stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});
+    const mime=pickMime();if(mime===null)throw new Error('Recording not supported in this browser');
+    rec=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream);chunks=[];
+    rec.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data)};
+    rec.onstop=onStop;rec.start(1000);t0=Date.now();state='rec';if(AUTOSTOP)setTimeout(stop,AUTOSTOP*1000);
+    btn.className='rec';btn.textContent='Tap to stop & send';say('Recording…');
+    timer=setInterval(()=>{tm.textContent=fmt((Date.now()-t0)/1000)},250);
+  }catch(e){
+    if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
+    idle();say((e&&e.name==='NotAllowedError')?'Tap the button to record (allow the mic if asked)':'Tap to record'+(e&&e.message&&e.name!=='NotAllowedError'?' — '+e.message:''),'');
+  }
+}
+function stop(){if(state!=='rec')return;state='stopping';clearInterval(timer);btn.className='busy';btn.textContent='Sending…';say('Sending to Emma…');
+  try{rec.requestData&&rec.requestData()}catch(e){}rec.stop()}
+async function onStop(){
+  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
+  lastMime=(rec.mimeType||chunks[0]&&chunks[0].type||'audio/webm');lastBlob=new Blob(chunks,{type:lastMime});
+  lastDur=Math.round((Date.now()-t0)/100)/10;lastId=newId();recip=null;
+  document.querySelectorAll('.chip').forEach(c=>c.classList.remove('sel'));document.getElementById('note').value='';
+  await upload();
+}
+async function upload(){
+  state='uploading';btn.className='busy';btn.textContent='Sending…';say('Sending to Emma…');
+  for(let i=0;i<4;i++){
+    try{const ext=lastMime.indexOf('mp4')>=0||lastMime.indexOf('aac')>=0?'m4a':(lastMime.indexOf('ogg')>=0?'ogg':'webm');
+      const r=await fetch(NTFY+TOPIC,{method:'PUT',headers:{'Filename':lastId+'.'+ext,'Title':'rec','Priority':'1',
+        'Message':JSON.stringify({type:'rec',id:lastId,dur:lastDur,mime:lastMime.split(';')[0],t:new Date().toISOString()})},body:lastBlob});
+      if(r.ok){state='done';btn.className='done';btn.textContent='Record again';say('Sent ✓','ok');after.style.display='flex';lastBlob=null;return}
+    }catch(e){}
+    await new Promise(r=>setTimeout(r,1500*(i+1)));
+  }
+  state='failed';btn.className='';btn.textContent='Retry send';say('Couldn\'t send — check signal and tap Retry','err');
+}
+btn.addEventListener('click',()=>{if(state==='rec')stop();else if(state==='failed')upload();else if(state==='idle'||state==='done'||state==='starting'){tm.textContent='0:00';start()}});
+document.getElementById('again').addEventListener('click',()=>{tm.textContent='0:00';start()});
+document.querySelectorAll('.chip').forEach(c=>c.addEventListener('click',()=>{document.querySelectorAll('.chip').forEach(x=>x.classList.remove('sel'));c.classList.add('sel');recip=c.dataset.r}));
+document.getElementById('save').addEventListener('click',async()=>{if(!lastId)return;
+  try{const r=await fetch(NTFY+TOPIC,{method:'POST',headers:{'Title':'meta','Priority':'1'},body:JSON.stringify({type:'meta',id:lastId,recipient:recip,note:document.getElementById('note').value})});
+   say(r.ok?'Details saved ✓':'Couldn\'t save details — just tell Emma in chat',r.ok?'ok':'err')}catch(e){say('Couldn\'t save details — just tell Emma in chat','err')}});
+window.addEventListener('beforeunload',e=>{if(state==='rec'||state==='uploading'){e.preventDefault();e.returnValue=''}});
+if(TOPIC.length<20){btn.disabled=true;btn.textContent='Link incomplete';say('Open the full link Emma sent you','err')}else start(); // auto-start on load; falls back to the big button if the browser blocks it
+})();
+</script></body></html>
