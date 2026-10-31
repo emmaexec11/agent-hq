@@ -5,95 +5,159 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://ntfy.sh; media-src blob:; img-src data:">
 <meta name="theme-color" content="#111"><title>Voice → Emma</title>
 <style>
-*{box-sizing:border-box}html,body{margin:0;height:100%;background:#111;color:#f2f2f2;font-family:-apple-system,system-ui,Segoe UI,Roboto,sans-serif}
-main{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:24px;text-align:center}
-#btn{width:min(70vw,300px);height:min(70vw,300px);border-radius:50%;border:0;font-size:26px;font-weight:700;color:#fff;background:#2b7a3d;cursor:pointer;box-shadow:0 0 0 0 rgba(229,57,53,.6);-webkit-tap-highlight-color:transparent}
-#btn.rec{background:#e53935;animation:pulse 1.4s infinite}
-#btn.busy{background:#555}
-#btn.done{background:#2b7a3d}
-@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(229,57,53,.6)}70%{box-shadow:0 0 0 28px rgba(229,57,53,0)}100%{box-shadow:0 0 0 0 rgba(229,57,53,0)}}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#111;color:#f2f2f2;font-family:-apple-system,system-ui,Segoe UI,Roboto,sans-serif}
+main{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:24px 16px;text-align:center}
+#btn{width:min(62vw,260px);height:min(62vw,260px);border-radius:50%;border:0;font-size:24px;font-weight:700;color:#fff;background:#2b7a3d;cursor:pointer;-webkit-tap-highlight-color:transparent}
+#btn.rec{background:#e53935;animation:pulse 1.4s infinite}#btn.busy{background:#555}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(229,57,53,.6)}70%{box-shadow:0 0 0 26px rgba(229,57,53,0)}100%{box-shadow:0 0 0 0 rgba(229,57,53,0)}}
 #time{font-size:44px;font-variant-numeric:tabular-nums;font-weight:300}
-#status{font-size:18px;min-height:1.4em;color:#ccc}
-#status.ok{color:#5fd27a;font-size:24px;font-weight:700}#status.err{color:#ff8a80}
-#after{display:none;width:min(92vw,420px);gap:10px;flex-direction:column}
-.chips{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.chip{padding:14px;border-radius:12px;border:2px solid #444;background:#1c1c1c;color:#eee;font-size:17px}
+#meter{width:min(90vw,420px);height:70px;display:none}
+#warn{display:none;background:#5a1d1d;color:#ffcdd2;border-radius:10px;padding:10px 14px;font-weight:700}
+#status{font-size:18px;min-height:1.4em;color:#ccc}#status.ok{color:#5fd27a;font-size:26px;font-weight:700}#status.err{color:#ff8a80}
+.panel{display:none;width:min(94vw,440px);gap:10px;flex-direction:column}
+audio{width:100%}
+.chips{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.chip{padding:13px;border-radius:12px;border:2px solid #444;background:#1c1c1c;color:#eee;font-size:17px}
 .chip.sel{border-color:#5fd27a;background:#1f3324}
-textarea{width:100%;min-height:70px;border-radius:12px;border:2px solid #444;background:#1c1c1c;color:#eee;font-size:16px;padding:10px}
-.row{display:flex;gap:10px}.row button{flex:1;padding:14px;border-radius:12px;border:0;font-size:17px;font-weight:600}
-#save{background:#2b7a3d;color:#fff}#again{background:#333;color:#eee}
-small{color:#888}
+input,textarea{width:100%;border-radius:12px;border:2px solid #444;background:#1c1c1c;color:#eee;font-size:16px;padding:12px;font-family:inherit}
+input.sel{border-color:#5fd27a}textarea{min-height:60px}
+.big{display:flex;gap:10px}.big button{flex:1;padding:18px;border-radius:14px;border:0;font-size:20px;font-weight:700}
+.send{background:#2b7a3d;color:#fff}.share{background:#1e5aa8;color:#fff}a.dl{display:none;flex:1;padding:18px;border-radius:14px;font-size:20px;font-weight:700;text-decoration:none;text-align:center}.rerec{background:#333;color:#eee}
+small{color:#888}label{text-align:left;color:#aaa;font-size:14px}
 </style></head><body><main>
 <div id="time">0:00</div>
+<canvas id="meter" width="420" height="70"></canvas>
+<div id="warn">No sound — check mic</div>
 <button id="btn">Starting…</button>
 <div id="status">Getting the mic ready…</div>
-<div id="after">
-  <div><small>Optional — who's it for? (or just tell Emma in chat)</small></div>
+
+<div class="panel" id="review">
+  <audio id="player" controls playsinline></audio>
+  <div class="big"><button class="share" id="share">Share…</button><a class="share dl" id="dl" download>⬇ Download</a></div>
+  <label>Send to Emma — who's it for? (optional, or tell Emma in chat)</label>
   <div class="chips">
     <button class="chip" data-r="mom">Mom</button><button class="chip" data-r="dad">Dad</button>
     <button class="chip" data-r="general">General</button><button class="chip" data-r="emma">Just Emma</button>
   </div>
+  <input id="custom" placeholder="Someone else: name, phone or Twist chat" autocomplete="off">
   <textarea id="note" placeholder="Optional note for Emma"></textarea>
-  <div class="row"><button id="save">Save details</button><button id="again">Record another</button></div>
+  <div class="big"><button class="send" id="send">Send to Emma ➤</button></div>
+  <div class="big"><button class="rerec" id="rerec">↺ Re-record</button></div>
   <small>Nothing is posted anywhere until you Approve in chat.</small>
+</div>
+
+<div class="panel" id="sent">
+  <div class="big"><button class="share" id="share2">Share…</button></div>
+  <div class="big"><button class="rerec" id="rerec2">↺ Re-record (discard that one)</button><button class="send" id="new">New recording</button></div>
+  <small>Emma will ask you to Approve before anything is posted.</small>
 </div>
 </main>
 <script>
 (function(){
-const btn=document.getElementById('btn'),st=document.getElementById('status'),tm=document.getElementById('time'),after=document.getElementById('after');
 const H=new URLSearchParams(location.hash.slice(1));const TOPIC=H.get('k')||'';const AUTOSTOP=+H.get('autostop')||0;const NTFY='https://ntfy.sh/';
-let startAt=0,rec=null,stream=null,chunks=[],t0=0,timer=null,state='idle',lastId=null,lastBlob=null,lastMime='',lastDur=0,recip=null;
+const $=id=>document.getElementById(id);
+const btn=$('btn'),st=$('status'),tm=$('time'),meter=$('meter'),warn=$('warn'),review=$('review'),sent=$('sent'),player=$('player');
+let shareFile=null,state='idle',startAt=0,rec=null,stream=null,chunks=[],t0=0,timer=null,blob=null,mime='',dur=0,curId=null,sentId=null,recip=null,url=null;
+let actx=null,an=null,raf=null,silentSince=0,levelMax=0;
+window.__rec={get mime(){return mime},get canShare(){return $('share').style.display!=='none'},get state(){return state},get levelMax(){return levelMax},get warned(){return warn.style.display==='block'},get sentId(){return sentId}};
 function say(t,c){st.textContent=t;st.className=c||''}
 function fmt(s){s=Math.floor(s);return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')}
-function pickMime(){const c=['audio/webm;codecs=opus','audio/webm','audio/mp4;codecs=mp4a.40.2','audio/mp4','audio/aac','audio/ogg;codecs=opus'];
+function pickMime(){const c=['audio/mp4;codecs=mp4a.40.2','audio/mp4','audio/aac','audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus']; // mp4/m4a first: shares to most apps
   if(!window.MediaRecorder)return null;for(const m of c){try{if(MediaRecorder.isTypeSupported(m))return m}catch(e){}}return ''}
 function newId(){const d=new Date(),p=n=>String(n).padStart(2,'0');const r=Math.random().toString(36).slice(2,8).padEnd(6,'0');
   return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'-'+p(d.getHours())+p(d.getMinutes())+p(d.getSeconds())+'-'+r}
-function idle(msg){state='idle';btn.className='';btn.textContent='Tap to record';if(msg)say(msg)}
+function show(p){review.style.display=p==='review'?'flex':'none';sent.style.display=p==='sent'?'flex':'none'}
+function idle(){state='idle';btn.className='';btn.textContent='Tap to record';btn.style.display=''}
+
+// ---- live level meter ----
+function startMeter(){
+  try{const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;
+    actx=actx||new AC();const src=actx.createMediaStreamSource(stream);an=actx.createAnalyser();an.fftSize=1024;src.connect(an);
+    if(actx.state==='suspended')actx.resume().catch(()=>{});
+  }catch(e){an=null}
+  meter.style.display='block';silentSince=Date.now();levelMax=0;warn.style.display='none';
+  const g=meter.getContext('2d'),buf=new Uint8Array(1024),hist=new Array(42).fill(0);
+  const draw=()=>{
+    let rms=0,live=an&&actx&&actx.state==='running';
+    if(live){an.getByteTimeDomainData(buf);let s=0;for(let i=0;i<buf.length;i++){const v=(buf[i]-128)/128;s+=v*v}rms=Math.sqrt(s/buf.length)}
+    const lvl=Math.min(1,rms*6);levelMax=Math.max(levelMax,lvl);hist.push(lvl);hist.shift();
+    g.clearRect(0,0,meter.width,meter.height);const w=meter.width/hist.length;
+    hist.forEach((v,i)=>{const h=Math.max(3,v*meter.height);g.fillStyle=v>0.08?'#5fd27a':'#555';g.fillRect(i*w+1,(meter.height-h)/2,w-3,h)});
+    if(live){if(lvl>0.06)silentSince=Date.now();warn.style.display=(Date.now()-silentSince>3000)?'block':'none'}
+    else{warn.style.display='none';if(actx&&actx.state==='suspended'){say('Recording… (tap the screen to show the level)')}}
+    raf=requestAnimationFrame(draw)};
+  draw();
+}
+function stopMeter(){if(raf)cancelAnimationFrame(raf);raf=null;meter.style.display='none';warn.style.display='none'}
+document.addEventListener('pointerdown',()=>{if(actx&&actx.state==='suspended')actx.resume().then(()=>{if(state==='rec')say('Recording…')}).catch(()=>{})},true);
+
+// ---- record ----
 async function start(){
-  if(state==='rec'||(state==='starting'&&Date.now()-startAt<2500))return;state='starting';startAt=Date.now();btn.className='busy';btn.textContent='Starting…';after.style.display='none';
+  if(state==='rec'||(state==='starting'&&Date.now()-startAt<2500))return;state='starting';startAt=Date.now();
+  show(null);btn.style.display='';btn.className='busy';btn.textContent='Starting…';tm.textContent='0:00';
   try{
     if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw new Error('This browser has no mic access here');
     stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});
-    const mime=pickMime();if(mime===null)throw new Error('Recording not supported in this browser');
-    rec=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream);chunks=[];
-    rec.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data)};
-    rec.onstop=onStop;rec.start(1000);t0=Date.now();state='rec';if(AUTOSTOP)setTimeout(stop,AUTOSTOP*1000);
-    btn.className='rec';btn.textContent='Tap to stop & send';say('Recording…');
-    timer=setInterval(()=>{tm.textContent=fmt((Date.now()-t0)/1000)},250);
-  }catch(e){
-    if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
-    idle();say((e&&e.name==='NotAllowedError')?'Tap the button to record (allow the mic if asked)':'Tap to record'+(e&&e.message&&e.name!=='NotAllowedError'?' — '+e.message:''),'');
-  }
+    const m=pickMime();if(m===null)throw new Error('Recording not supported in this browser');
+    rec=m?new MediaRecorder(stream,{mimeType:m}):new MediaRecorder(stream);chunks=[];
+    rec.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data)};rec.onstop=onStop;
+    rec.start(1000);t0=Date.now();state='rec';btn.className='rec';btn.textContent='Tap to stop';say('Recording…');
+    timer=setInterval(()=>{tm.textContent=fmt((Date.now()-t0)/1000)},250);startMeter();
+    if(AUTOSTOP)setTimeout(stop,AUTOSTOP*1000);
+  }catch(e){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
+    idle();say(e&&e.name==='NotAllowedError'?'Tap the button to record (allow the mic if asked)':'Tap to record'+(e&&e.message?' — '+e.message:''))}
 }
-function stop(){if(state!=='rec')return;state='stopping';clearInterval(timer);btn.className='busy';btn.textContent='Sending…';say('Sending to Emma…');
-  try{rec.requestData&&rec.requestData()}catch(e){}rec.stop()}
-async function onStop(){
+function stop(){if(state!=='rec')return;state='stopping';clearInterval(timer);stopMeter();try{rec.requestData&&rec.requestData()}catch(e){}rec.stop()}
+function onStop(){
   if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
-  lastMime=(rec.mimeType||chunks[0]&&chunks[0].type||'audio/webm');lastBlob=new Blob(chunks,{type:lastMime});
-  lastDur=Math.round((Date.now()-t0)/100)/10;lastId=newId();recip=null;
-  document.querySelectorAll('.chip').forEach(c=>c.classList.remove('sel'));document.getElementById('note').value='';
-  await upload();
+  mime=(rec.mimeType||(chunks[0]&&chunks[0].type)||'audio/webm');blob=new Blob(chunks,{type:mime});dur=Math.round((Date.now()-t0)/100)/10;curId=newId();
+  if(url)URL.revokeObjectURL(url);url=URL.createObjectURL(blob);player.src=url;
+  const ext=fileExt();shareFile=null;
+  try{shareFile=new File([blob],'voice-note-'+curId+'.'+ext,{type:mime.split(';')[0]})}catch(e){}
+  const canShareFile=!!(shareFile&&navigator.canShare&&navigator.share&&(()=>{try{return navigator.canShare({files:[shareFile]})}catch(e){return false}})());
+  $('share').style.display=canShareFile?'':'none';$('dl').style.display=canShareFile?'none':'block';
+  $('dl').href=url;$('dl').setAttribute('download','voice-note-'+curId+'.'+ext);
+  state='review';btn.style.display='none';say('Listen back, then Share, Send to Emma, or Re-record');show('review');
 }
-async function upload(){
-  state='uploading';btn.className='busy';btn.textContent='Sending…';say('Sending to Emma…');
-  for(let i=0;i<4;i++){
-    try{const ext=lastMime.indexOf('mp4')>=0||lastMime.indexOf('aac')>=0?'m4a':(lastMime.indexOf('ogg')>=0?'ogg':'webm');
-      const r=await fetch(NTFY+TOPIC,{method:'PUT',headers:{'Filename':lastId+'.'+ext,'Title':'rec','Priority':'1',
-        'Message':JSON.stringify({type:'rec',id:lastId,dur:lastDur,mime:lastMime.split(';')[0],t:new Date().toISOString()})},body:lastBlob});
-      if(r.ok){state='done';btn.className='done';btn.textContent='Record again';say('Sent ✓','ok');after.style.display='flex';lastBlob=null;return}
-    }catch(e){}
-    await new Promise(r=>setTimeout(r,1500*(i+1)));
-  }
-  state='failed';btn.className='';btn.textContent='Retry send';say('Couldn\'t send — check signal and tap Retry','err');
+function fileExt(){return mime.indexOf('mp4')>=0||mime.indexOf('aac')>=0?'m4a':(mime.indexOf('ogg')>=0?'ogg':'webm')}
+function clearDetails(){recip=null;document.querySelectorAll('.chip').forEach(c=>c.classList.remove('sel'));$('custom').value='';$('custom').classList.remove('sel');$('note').value='';applyPreset()}
+function applyPreset(){const t=(H.get('to')||'').toLowerCase();const c=document.querySelector('.chip[data-r="'+t+'"]');if(c){c.classList.add('sel');recip=t}}
+
+// ---- send / discard ----
+async function put(headers,body){for(let i=0;i<4;i++){try{const r=await fetch(NTFY+TOPIC,{method:'PUT',headers,body});if(r.ok)return true}catch(e){}await new Promise(r=>setTimeout(r,1500*(i+1)))}return false}
+async function doShare(){if(!shareFile)return;try{await navigator.share({files:[shareFile],title:'Voice note'});say('Shared ✓','ok')}
+  catch(e){if(e&&e.name!=='AbortError')say('Share didn\'t work — use Send to Emma','err')}}
+async function send(){
+  if(state!=='review'||!blob)return;state='sending';$('send').disabled=true;$('rerec').disabled=true;say('Sending to Emma…');
+  const ext=fileExt();
+  const meta={type:'rec',id:curId,dur:dur,mime:mime.split(';')[0],t:new Date().toISOString(),recipient:recip,recipient_custom:$('custom').value.trim().slice(0,200),note:$('note').value.slice(0,2000)};
+  // header values must be ASCII: escape non-ASCII
+  const msg=JSON.stringify(meta).replace(/[\u0080-\uffff]/g,c=>'\\u'+c.charCodeAt(0).toString(16).padStart(4,'0'));
+  const ok=await put({'Filename':curId+'.'+ext,'Title':'rec','Priority':'1','Message':msg},blob);
+  $('send').disabled=false;$('rerec').disabled=false;
+  if(ok){sentId=curId;state='sent';show('sent');$('share2').style.display=$('share').style.display;say('Sent ✓','ok')}
+  else{state='review';say('Couldn\'t send — check signal and tap Send again','err')}
 }
-btn.addEventListener('click',()=>{if(state==='rec')stop();else if(state==='failed')upload();else if(state==='idle'||state==='done'||state==='starting'){tm.textContent='0:00';start()}});
-document.getElementById('again').addEventListener('click',()=>{tm.textContent='0:00';start()});
-document.querySelectorAll('.chip').forEach(c=>c.addEventListener('click',()=>{document.querySelectorAll('.chip').forEach(x=>x.classList.remove('sel'));c.classList.add('sel');recip=c.dataset.r}));
-document.getElementById('save').addEventListener('click',async()=>{if(!lastId)return;
-  try{const r=await fetch(NTFY+TOPIC,{method:'POST',headers:{'Title':'meta','Priority':'1'},body:JSON.stringify({type:'meta',id:lastId,recipient:recip,note:document.getElementById('note').value})});
-   say(r.ok?'Details saved ✓':'Couldn\'t save details — just tell Emma in chat',r.ok?'ok':'err')}catch(e){say('Couldn\'t save details — just tell Emma in chat','err')}});
-window.addEventListener('beforeunload',e=>{if(state==='rec'||state==='uploading'){e.preventDefault();e.returnValue=''}});
-if(TOPIC.length<20){btn.disabled=true;btn.textContent='Link incomplete';say('Open the full link Emma sent you','err')}else start(); // auto-start on load; falls back to the big button if the browser blocks it
+async function discardSent(){
+  if(!sentId)return true;const id=sentId;say('Discarding that take…');
+  const ok=await put({'Title':'discard','Priority':'1'},JSON.stringify({type:'discard',id:id,t:new Date().toISOString()}));
+  if(ok){sentId=null;return true}say('Couldn\'t discard — tell Emma in chat to ignore it','err');return false;
+}
+async function rerecord(){
+  shareFile=null;
+  if(state==='review'){blob=null;curId=null}            // not uploaded yet: just drop it
+  else if(state==='sent'){if(!await discardSent())return}
+  clearDetails();start();
+}
+btn.addEventListener('click',()=>{if(state==='rec')stop();else if(state==='idle'||state==='starting')start()});
+$('send').addEventListener('click',send);$('share').addEventListener('click',doShare);$('share2').addEventListener('click',doShare);$('rerec').addEventListener('click',rerecord);$('rerec2').addEventListener('click',rerecord);
+$('new').addEventListener('click',()=>{sentId=null;blob=null;shareFile=null;clearDetails();start()});
+document.querySelectorAll('.chip').forEach(c=>c.addEventListener('click',()=>{const was=c.classList.contains('sel');
+  document.querySelectorAll('.chip').forEach(x=>x.classList.remove('sel'));if(!was){c.classList.add('sel');recip=c.dataset.r}else recip=null}));
+applyPreset();
+$('custom').addEventListener('input',()=>$('custom').classList.toggle('sel',!!$('custom').value.trim()));
+window.addEventListener('beforeunload',e=>{if(state==='rec'||state==='sending'||state==='review'){e.preventDefault();e.returnValue=''}});
+window.__test={send,rerecord,setDetails:(r,c,n)=>{recip=r;$('custom').value=c||'';$('note').value=n||''}};
+if(TOPIC.length<20){btn.disabled=true;btn.textContent='Link incomplete';say('Open the full link Emma sent you','err')}else start(); // auto-start; big button is the fallback
 })();
 </script></body></html>
