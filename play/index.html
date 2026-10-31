@@ -44,12 +44,13 @@
   if(!p.u||!p.k){fail('This link is incomplete.');return;}
   var url=/^https:\/\//.test(p.u)?p.u:'https://files.catbox.moe/'+p.u.replace(/[^A-Za-z0-9._-]/g,'');
   if(!(window.crypto&&crypto.subtle)){fail('Please open this link in Safari or Chrome.');return;}
+  if(p.e&&Date.now()/1000>+p.e){fail('This voice note has expired.');return;}
   fetch(url,{cache:'force-cache',credentials:'omit',referrerPolicy:'no-referrer'}).then(function(r){
     if(!r.ok)throw new Error('HTTP '+r.status);return r.arrayBuffer();
   }).then(function(buf){
     var raw=new Uint8Array(buf);
     return crypto.subtle.importKey('raw',b64u(p.k),{name:'AES-GCM'},false,['decrypt']).then(function(key){
-      return crypto.subtle.decrypt({name:'AES-GCM',iv:raw.slice(0,12)},key,raw.slice(12));
+      var o={name:'AES-GCM',iv:raw.slice(0,12)};if(p.e)o.additionalData=new TextEncoder().encode('e='+p.e);return crypto.subtle.decrypt(o,key,raw.slice(12));
     });
   }).then(function(plain){
     a.src=URL.createObjectURL(new Blob([plain],{type:'audio/mp4'}));
