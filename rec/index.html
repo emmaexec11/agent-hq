@@ -23,13 +23,14 @@ input,textarea{width:100%;border-radius:12px;border:2px solid #444;background:#1
 input.sel{border-color:#5fd27a}textarea{min-height:60px}
 .big{display:flex;gap:10px}.big button{flex:1;padding:18px;border-radius:14px;border:0;font-size:20px;font-weight:700}
 .send{background:#2b7a3d;color:#fff}.share{background:#1e5aa8;color:#fff}a.dl{display:none;flex:1;padding:18px;border-radius:14px;font-size:20px;font-weight:700;text-decoration:none;text-align:center}.rerec{background:#333;color:#eee}
-small{color:#888}label{text-align:left;color:#aaa;font-size:14px}
+#help{display:none;max-width:440px;background:#2a2410;color:#ffe9a8;border-radius:12px;padding:12px 14px;font-size:16px;line-height:1.4;text-align:left}small{color:#888}label{text-align:left;color:#aaa;font-size:14px}
 </style></head><body><main>
 <div id="time">0:00</div>
 <canvas id="meter" width="420" height="70"></canvas>
 <div id="warn">No sound — check mic</div>
 <button id="btn">Starting…</button>
 <div id="status">Getting the mic ready…</div>
+<div id="help"></div>
 
 <div class="panel" id="review">
   <audio id="player" controls playsinline></audio>
@@ -53,6 +54,7 @@ small{color:#888}label{text-align:left;color:#aaa;font-size:14px}
 </div>
 </main>
 <script>
+window.addEventListener('error',e=>{try{var h=document.getElementById('help');h.textContent='Page error: '+(e.message||'unknown')+'. Try reloading, or open the link in Chrome.';h.style.display='block'}catch(x){}});
 (function(){
 const H=new URLSearchParams(location.hash.slice(1));const TOPIC=H.get('k')||'';const AUTOSTOP=+H.get('autostop')||0;const NTFY='https://ntfy.sh/';
 const $=id=>document.getElementById(id);
@@ -72,7 +74,7 @@ function idle(){state='idle';btn.className='';btn.textContent='Tap to record';bt
 // ---- live level meter ----
 function startMeter(){
   try{const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;
-    actx=actx||new AC();const src=actx.createMediaStreamSource(stream);an=actx.createAnalyser();an.fftSize=1024;src.connect(an);
+    actx=actx||new AC();if(an){try{an.disconnect()}catch(e){}}const src=actx.createMediaStreamSource(stream);an=actx.createAnalyser();an.fftSize=1024;src.connect(an);
     if(actx.state==='suspended')actx.resume().catch(()=>{});
   }catch(e){an=null}
   meter.style.display='block';silentSince=Date.now();levelMax=0;warn.style.display='none';
@@ -91,21 +93,54 @@ function startMeter(){
 function stopMeter(){if(raf)cancelAnimationFrame(raf);raf=null;meter.style.display='none';warn.style.display='none'}
 document.addEventListener('pointerdown',()=>{if(actx&&actx.state==='suspended')actx.resume().then(()=>{if(state==='rec')say('Recording…')}).catch(()=>{})},true);
 
+function unlockAudio(){try{const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;actx=actx||new AC();if(actx.state==='suspended')actx.resume().catch(()=>{})}catch(e){}}
+function help(t){const h=$('help');h.textContent=t||'';h.style.display=t?'block':'none'}
+const BRAVE=!!(navigator.brave);
+function explain(e){const n=e&&e.name||'',m=(e&&e.message)||String(e||'');
+  if(n==='NotAllowedError'||n==='PermissionDeniedError'||n==='SecurityError')return 'Microphone blocked. Tap the '+(BRAVE?'lock or settings icon next to the address bar → Site settings → Microphone → Allow':'lock icon next to the address bar → Permissions → Microphone → Allow')+', then tap Tap to record again. Also check Android Settings → Apps → '+(BRAVE?'Brave':'your browser')+' → Permissions → Microphone.';
+  if(n==='NotFoundError'||n==='DevicesNotFoundError'||n==='OverconstrainedError')return 'No microphone found. Close other apps using the mic and try again.';
+  if(n==='NotReadableError'||n==='TrackStartError'||n==='AbortError')return 'The mic is busy in another app (a call, recorder or camera). Close it and tap Tap to record again.';
+  if(n==='Timeout')return 'The mic permission popup didn\'t appear. Tap Tap to record. If nothing happens, allow the microphone in site settings (lock icon by the address bar).';
+  return 'Couldn\'t start recording: '+(m||n||'unknown error')+'. Try opening the link in Chrome.'}
+let gen=0;
 // ---- record ----
-async function start(){
-  if(state==='rec'||(state==='starting'&&Date.now()-startAt<2500))return;state='starting';startAt=Date.now();
-  show(null);btn.style.display='';btn.className='busy';btn.textContent='Starting…';tm.textContent='0:00';
+async function start(fromTap){
+  if(state==='rec'||state==='stopping')return;
+  if(state==='starting'&&!fromTap)return;
+  const my=++gen;state='starting';startAt=Date.now();help('');
+  show(null);btn.style.display='';btn.className='busy';btn.textContent='Starting…';tm.textContent='0:00';say(fromTap?'Allow the microphone if asked…':'Getting the mic ready…');
+  let s1=null;
   try{
-    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw new Error('This browser has no mic access here');
-    stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});
-    const m=pickMime();if(m===null)throw new Error('Recording not supported in this browser');
-    rec=m?new MediaRecorder(stream,{mimeType:m}):new MediaRecorder(stream);chunks=[];
-    rec.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data)};rec.onstop=onStop;
-    rec.start(1000);t0=Date.now();state='rec';btn.className='rec';btn.textContent='Tap to stop';say('Recording…');
+    if(!window.isSecureContext)throw {name:'Insecure',message:'page must be opened over https'};
+    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw {name:'NoAPI',message:'this browser has no microphone access here'};
+    if(!window.MediaRecorder)throw {name:'NoRec',message:'this browser can\'t record audio'};
+    const gum=navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});
+    // autostart without a tap can hang forever in some browsers (no prompt shown): give up after 4 s
+    s1=await (fromTap?gum:Promise.race([gum,new Promise((_,rj)=>setTimeout(()=>rj({name:'Timeout'}),4000))]));
+    if(my!==gen){s1.getTracks().forEach(t=>t.stop());return}
+    stream=s1;
+    const m=pickMime();rec=null;
+    for(const opt of (m?[{mimeType:m},undefined]:[undefined])){try{rec=opt?new MediaRecorder(stream,opt):new MediaRecorder(stream);break}catch(e){rec=null}}
+    if(!rec)throw {name:'NoRec',message:'no supported audio format'};
+    chunks=[];rec.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data)};rec.onstop=onStop;
+    rec.onerror=ev=>{say('Recording error — tap Re-record','err')};
+    try{rec.start(1000)}catch(e){rec.start()}
+    t0=Date.now();state='rec';btn.className='rec';btn.textContent='Tap to stop';say('Recording…');
     timer=setInterval(()=>{tm.textContent=fmt((Date.now()-t0)/1000)},250);startMeter();
     if(AUTOSTOP)setTimeout(stop,AUTOSTOP*1000);
-  }catch(e){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
-    idle();say(e&&e.name==='NotAllowedError'?'Tap the button to record (allow the mic if asked)':'Tap to record'+(e&&e.message?' — '+e.message:''))}
+  }catch(e){
+    if(my!==gen)return;
+    if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
+    idle();
+    if(!fromTap&&(e&&(e.name==='Timeout'||e.name==='NotAllowedError'))){say('Tap the button to start recording')}
+    else{say('Couldn\'t start the mic','err');help(explain(e))}
+  }
+}
+async function autoStart(){
+  // only auto-start when the mic is already allowed; otherwise wait for a tap (Brave/Chrome block prompts without a tap)
+  let p='unknown';try{if(navigator.permissions&&navigator.permissions.query)p=(await navigator.permissions.query({name:'microphone'})).state}catch(e){}
+  if(p==='granted')start(false);
+  else{idle();say(p==='denied'?'Microphone blocked':'Tap the button to start recording',p==='denied'?'err':'');if(p==='denied')help(explain({name:'NotAllowedError'}))}
 }
 function stop(){if(state!=='rec')return;state='stopping';clearInterval(timer);stopMeter();try{rec.requestData&&rec.requestData()}catch(e){}rec.stop()}
 function onStop(){
@@ -136,7 +171,7 @@ async function send(){
   const ok=await put({'Filename':curId+'.'+ext,'Title':'rec','Priority':'1','Message':msg},blob);
   $('send').disabled=false;$('rerec').disabled=false;
   if(ok){sentId=curId;state='sent';show('sent');$('share2').style.display=$('share').style.display;say('Sent ✓','ok')}
-  else{state='review';say('Couldn\'t send — check signal and tap Send again','err')}
+  else{state='review';say('Couldn\'t send — check signal and tap Send again','err');if(BRAVE)help('If it keeps failing in Brave: tap the lion icon → turn Shields off for this site, then tap Send again.')}
 }
 async function discardSent(){
   if(!sentId)return true;const id=sentId;say('Discarding that take…');
@@ -147,17 +182,17 @@ async function rerecord(){
   shareFile=null;
   if(state==='review'){blob=null;curId=null}            // not uploaded yet: just drop it
   else if(state==='sent'){if(!await discardSent())return}
-  clearDetails();start();
+  clearDetails();start(true);
 }
-btn.addEventListener('click',()=>{if(state==='rec')stop();else if(state==='idle'||state==='starting')start()});
-$('send').addEventListener('click',send);$('share').addEventListener('click',doShare);$('share2').addEventListener('click',doShare);$('rerec').addEventListener('click',rerecord);$('rerec2').addEventListener('click',rerecord);
-$('new').addEventListener('click',()=>{sentId=null;blob=null;shareFile=null;clearDetails();start()});
+btn.addEventListener('click',()=>{unlockAudio();if(state==='rec')stop();else if(state==='idle'||state==='starting')start(true)});
+$('send').addEventListener('click',send);$('share').addEventListener('click',doShare);$('share2').addEventListener('click',doShare);$('rerec').addEventListener('click',()=>{unlockAudio();rerecord()});$('rerec2').addEventListener('click',()=>{unlockAudio();rerecord()});
+$('new').addEventListener('click',()=>{sentId=null;blob=null;shareFile=null;unlockAudio();clearDetails();start(true)});
 document.querySelectorAll('.chip').forEach(c=>c.addEventListener('click',()=>{const was=c.classList.contains('sel');
   document.querySelectorAll('.chip').forEach(x=>x.classList.remove('sel'));if(!was){c.classList.add('sel');recip=c.dataset.r}else recip=null}));
 applyPreset();
 $('custom').addEventListener('input',()=>$('custom').classList.toggle('sel',!!$('custom').value.trim()));
 window.addEventListener('beforeunload',e=>{if(state==='rec'||state==='sending'||state==='review'){e.preventDefault();e.returnValue=''}});
 window.__test={send,rerecord,setDetails:(r,c,n)=>{recip=r;$('custom').value=c||'';$('note').value=n||''}};
-if(TOPIC.length<20){btn.disabled=true;btn.textContent='Link incomplete';say('Open the full link Emma sent you','err')}else start(); // auto-start; big button is the fallback
+if(TOPIC.length<20){btn.disabled=true;btn.textContent='Link incomplete';say('Open the full link Emma sent you','err')}else autoStart(); // auto-start only if mic already allowed; big button is the fallback
 })();
 </script></body></html>
